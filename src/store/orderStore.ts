@@ -1,6 +1,7 @@
 import { create } from 'zustand';
-import type { Order, FeedingRecord, Review, Notification, FeedingPlan, Coupon, ServiceType, PaymentMethod } from '@/data/types';
+import type { Order, FeedingRecord, Review, Notification, FeedingPlan, Coupon, ServiceType, PaymentMethod, ServiceItem } from '@/data/types';
 import { mockOrders, mockFeedingRecords, mockReviews, mockNotifications, mockFeedingPlans, mockCoupons, mockServices } from '@/data/mockData';
+import { useAuthStore } from './authStore';
 
 interface BookingState {
   selectedServices: ServiceType[];
@@ -12,6 +13,20 @@ interface BookingState {
   selectedCouponId: string | null;
 }
 
+interface RefundRequest {
+  orderId: string;
+  reason: string;
+  amount: number;
+  description: string;
+  status: 'pending' | 'processing' | 'approved' | 'rejected';
+  createdAt: string;
+}
+
+interface AdminConfig {
+  servicePrices: Record<string, number>;
+  platformFeeRate: number;
+}
+
 interface OrderState {
   orders: Order[];
   feedingRecords: FeedingRecord[];
@@ -19,8 +34,11 @@ interface OrderState {
   notifications: Notification[];
   feedingPlans: FeedingPlan[];
   coupons: Coupon[];
+  refundRequests: RefundRequest[];
   currentOrder: Order | null;
   booking: BookingState;
+  adminConfig: AdminConfig;
+  deletedNotificationIds: string[];
   
   setCurrentOrder: (order: Order | null) => void;
   updateBooking: (updates: Partial<BookingState>) => void;
@@ -32,11 +50,30 @@ interface OrderState {
   addReview: (review: Omit<Review, 'id' | 'userId' | 'createdAt'>) => void;
   markNotificationRead: (id: string) => void;
   markAllNotificationsRead: () => void;
+  deleteNotification: (id: string) => void;
   selectCoupon: (couponId: string | null) => void;
   calculateTotal: () => number;
   getOrdersByUser: (userId: string) => Order[];
   getRecordsByOrder: (orderId: string) => FeedingRecord[];
   getUnreadNotificationCount: () => number;
+  
+  addFeedingPlan: (plan: Omit<FeedingPlan, 'id' | 'userId'>) => void;
+  updateFeedingPlan: (id: string, updates: Partial<FeedingPlan>) => void;
+  deleteFeedingPlan: (id: string) => void;
+  togglePlanStatus: (id: string) => void;
+  
+  requestRefund: (orderId: string, reason: string, amount: number, description: string) => void;
+  updateReviewAfterSales: (reviewId: string, status: Review['afterSalesStatus'], refundReason?: string, refundAmount?: number) => void;
+  processRefund: (orderId: string, approve: boolean) => void;
+  
+  updateServicePrice: (serviceId: string, price: number) => void;
+  getServicePrices: () => ServiceItem[];
+  
+  feederAcceptOrder: (orderId: string, feederId: string) => void;
+  feederConfirmArrival: (orderId: string) => void;
+  feederCompleteService: (orderId: string, recordData: Omit<FeedingRecord, 'id' | 'orderId' | 'feederId'>) => void;
+  
+  getComplaints: () => { id: string; orderId: string; userId: string; content: string; status: string; createdAt: string }[];
 }
 
 const initialBooking: BookingState = {
@@ -49,6 +86,30 @@ const initialBooking: BookingState = {
   selectedCouponId: null,
 };
 
+const initialRefundRequests: RefundRequest[] = [
+  {
+    orderId: 'order-5',
+    reason: '服务质量不满意',
+    amount: 50,
+    description: '喂养员迟到了很久，而且没有拍照片',
+    status: 'pending',
+    createdAt: '2026-06-10T14:30:00',
+  },
+];
+
+const initialAdminConfig: AdminConfig = {
+  servicePrices: mockServices.reduce((acc, s) => {
+    acc[s.id] = s.price;
+    return acc;
+  }, {} as Record<string, number>),
+  platformFeeRate: 0.15,
+};
+
+const complaints = [
+  { id: 'comp-1', orderId: 'order-5', userId: 'user-3', content: '喂养员迟到，服务态度不好', status: 'pending', createdAt: '2026-06-10T15:00:00' },
+  { id: 'comp-2', orderId: 'order-3', userId: 'user-2', content: '宠物回家后状态不对', status: 'processing', createdAt: '2026-06-12T09:00:00' },
+];
+
 export const useOrderStore = create<OrderState>((set, get) => ({
   orders: mockOrders,
   feedingRecords: mockFeedingRecords,
@@ -56,8 +117,11 @@ export const useOrderStore = create<OrderState>((set, get) => ({
   notifications: mockNotifications,
   feedingPlans: mockFeedingPlans,
   coupons: mockCoupons,
+  refundRequests: initialRefundRequests,
   currentOrder: null,
   booking: initialBooking,
+  adminConfig: initialAdminConfig,
+  deletedNotificationIds: [],
   
   setCurrentOrder: (order) => set({ currentOrder: order }),
   
@@ -131,7 +195,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         userId: order.userId,
         type: 'order',
         title: '支付成功',
-        content: `您的订单支付成功，等待喂养员接单`,
+        content: `您的订单支付成功，已为您分配喂养员`,
         read: false,
         timestamp: new Date().toISOString(),
         relatedId: id,
@@ -149,17 +213,20 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     };
     set((state) => ({ feedingRecords: [newRecord, ...state.feedingRecords] }));
     
-    const notification: Notification = {
-      id: `notif-${Date.now()}`,
-      userId: get().orders.find(o => o.id === recordData.orderId)?.userId || '',
-      type: 'feeding',
-      title: '喂养记录已更新',
-      content: '您的宠物喂养记录已上传，点击查看详情',
-      read: false,
-      timestamp: new Date().toISOString(),
-      relatedId: recordData.orderId,
-    };
-    set((state) => ({ notifications: [notification, ...state.notifications] }));
+    const order = get().orders.find(o => o.id === recordData.orderId);
+    if (order) {
+      const notification: Notification = {
+        id: `notif-${Date.now()}`,
+        userId: order.userId,
+        type: 'feeding',
+        title: '喂养记录已更新',
+        content: '您的宠物喂养记录已上传，点击查看详情和照片',
+        read: false,
+        timestamp: new Date().toISOString(),
+        relatedId: recordData.orderId,
+      };
+      set((state) => ({ notifications: [notification, ...state.notifications] }));
+    }
   },
   
   addReview: (reviewData) => {
@@ -184,8 +251,19 @@ export const useOrderStore = create<OrderState>((set, get) => ({
   },
   
   markAllNotificationsRead: () => {
+    const { currentUser } = useAuthStore.getState();
+    if (!currentUser) return;
+    
     set((state) => ({
-      notifications: state.notifications.map((n) => ({ ...n, read: true })),
+      notifications: state.notifications.map((n) =>
+        n.userId === currentUser.id ? { ...n, read: true } : n
+      ),
+    }));
+  },
+  
+  deleteNotification: (id) => {
+    set((state) => ({
+      deletedNotificationIds: [...state.deletedNotificationIds, id],
     }));
   },
   
@@ -194,13 +272,16 @@ export const useOrderStore = create<OrderState>((set, get) => ({
   },
   
   calculateTotal: () => {
-    const { booking, coupons } = get();
+    const { booking, coupons, adminConfig } = get();
     let total = 0;
     
     booking.selectedServices.forEach((serviceId) => {
-      const service = mockServices.find(s => s.id === serviceId);
-      if (service) {
-        total += service.price;
+      const price = adminConfig.servicePrices[serviceId];
+      if (price !== undefined) {
+        total += price;
+      } else {
+        const service = mockServices.find(s => s.id === serviceId);
+        if (service) total += service.price;
       }
     });
     
@@ -224,9 +305,229 @@ export const useOrderStore = create<OrderState>((set, get) => ({
   
   getUnreadNotificationCount: () => {
     const { currentUser } = useAuthStore.getState();
+    const { notifications, deletedNotificationIds } = get();
     if (!currentUser) return 0;
-    return get().notifications.filter((n) => n.userId === currentUser.id && !n.read).length;
+    return notifications.filter(
+      (n) => n.userId === currentUser.id && !n.read && !deletedNotificationIds.includes(n.id)
+    ).length;
   },
+  
+  addFeedingPlan: (planData) => {
+    const { currentUser } = useAuthStore.getState();
+    if (!currentUser) return;
+    
+    const newPlan: FeedingPlan = {
+      ...planData,
+      id: `plan-${Date.now()}`,
+      userId: currentUser.id,
+    };
+    set((state) => ({ feedingPlans: [newPlan, ...state.feedingPlans] }));
+  },
+  
+  updateFeedingPlan: (id, updates) => {
+    set((state) => ({
+      feedingPlans: state.feedingPlans.map((plan) =>
+        plan.id === id ? { ...plan, ...updates } : plan
+      ),
+    }));
+  },
+  
+  deleteFeedingPlan: (id) => {
+    set((state) => ({
+      feedingPlans: state.feedingPlans.filter((plan) => plan.id !== id),
+    }));
+  },
+  
+  togglePlanStatus: (id) => {
+    set((state) => ({
+      feedingPlans: state.feedingPlans.map((plan) => {
+        if (plan.id === id) {
+          return { ...plan, status: plan.status === 'active' ? 'paused' : 'active' };
+        }
+        return plan;
+      }),
+    }));
+  },
+  
+  requestRefund: (orderId, reason, amount, description) => {
+    const { currentUser } = useAuthStore.getState();
+    if (!currentUser) return;
+    
+    const refundRequest: RefundRequest = {
+      orderId,
+      reason,
+      amount,
+      description,
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+    };
+    
+    set((state) => ({
+      refundRequests: [refundRequest, ...state.refundRequests],
+      reviews: state.reviews.map((review) =>
+        review.orderId === orderId
+          ? { ...review, afterSalesStatus: 'pending' as const, refundReason: reason, refundAmount: amount }
+          : review
+      ),
+    }));
+    
+    const existingReview = get().reviews.find(r => r.orderId === orderId);
+    if (!existingReview) {
+      const newReview: Review = {
+        id: `review-${Date.now()}`,
+        orderId,
+        userId: currentUser.id,
+        overallRating: 0,
+        attitudeRating: 0,
+        professionalRating: 0,
+        punctualityRating: 0,
+        content: description,
+        photos: [],
+        isAnonymous: false,
+        afterSalesStatus: 'pending',
+        refundReason: reason,
+        refundAmount: amount,
+        createdAt: new Date().toISOString(),
+      };
+      set((state) => ({ reviews: [newReview, ...state.reviews] }));
+    }
+  },
+  
+  updateReviewAfterSales: (reviewId, status, refundReason, refundAmount) => {
+    set((state) => ({
+      reviews: state.reviews.map((review) =>
+        review.id === reviewId
+          ? { ...review, afterSalesStatus: status, refundReason, refundAmount }
+          : review
+      ),
+    }));
+  },
+  
+  processRefund: (orderId, approve) => {
+    set((state) => ({
+      refundRequests: state.refundRequests.map((r) =>
+        r.orderId === orderId
+          ? { ...r, status: approve ? 'approved' : 'rejected' }
+          : r
+      ),
+      orders: state.orders.map((order) =>
+        order.id === orderId
+          ? { ...order, status: approve ? 'refunded' as const : order.status, paymentStatus: approve ? 'refunded' as const : order.paymentStatus }
+          : order
+      ),
+      reviews: state.reviews.map((review) =>
+        review.orderId === orderId
+          ? { ...review, afterSalesStatus: approve ? 'resolved' as const : 'rejected' as const }
+          : review
+      ),
+    }));
+  },
+  
+  updateServicePrice: (serviceId, price) => {
+    set((state) => ({
+      adminConfig: {
+        ...state.adminConfig,
+        servicePrices: {
+          ...state.adminConfig.servicePrices,
+          [serviceId]: price,
+        },
+      },
+    }));
+  },
+  
+  getServicePrices: () => {
+    const { adminConfig } = get();
+    return mockServices.map((s) => ({
+      ...s,
+      price: adminConfig.servicePrices[s.id] ?? s.price,
+    }));
+  },
+  
+  feederAcceptOrder: (orderId, feederId) => {
+    set((state) => ({
+      orders: state.orders.map((order) =>
+        order.id === orderId
+          ? { ...order, feederId, status: 'accepted' as const }
+          : order
+      ),
+    }));
+    
+    const order = get().orders.find(o => o.id === orderId);
+    if (order) {
+      const notification: Notification = {
+        id: `notif-${Date.now()}`,
+        userId: order.userId,
+        type: 'order',
+        title: '订单已接单',
+        content: `您的订单已被接单，喂养员会按时到达`,
+        read: false,
+        timestamp: new Date().toISOString(),
+        relatedId: orderId,
+      };
+      set((state) => ({ notifications: [notification, ...state.notifications] }));
+    }
+  },
+  
+  feederConfirmArrival: (orderId) => {
+    set((state) => ({
+      orders: state.orders.map((order) =>
+        order.id === orderId
+          ? { ...order, status: 'in_progress' as const }
+          : order
+      ),
+    }));
+    
+    const order = get().orders.find(o => o.id === orderId);
+    if (order) {
+      const notification: Notification = {
+        id: `notif-${Date.now()}`,
+        userId: order.userId,
+        type: 'feeding',
+        title: '喂养员已到达',
+        content: '喂养员已到达您家，开始为您的宠物提供服务',
+        read: false,
+        timestamp: new Date().toISOString(),
+        relatedId: orderId,
+      };
+      set((state) => ({ notifications: [notification, ...state.notifications] }));
+    }
+  },
+  
+  feederCompleteService: (orderId, recordData) => {
+    const { currentUser } = useAuthStore.getState();
+    if (!currentUser) return;
+    
+    set((state) => ({
+      orders: state.orders.map((order) =>
+        order.id === orderId
+          ? { ...order, status: 'completed' as const }
+          : order
+      ),
+    }));
+    
+    const newRecord: FeedingRecord = {
+      ...recordData,
+      id: `record-${Date.now()}`,
+      orderId,
+      feederId: currentUser.id,
+    };
+    set((state) => ({ feedingRecords: [newRecord, ...state.feedingRecords] }));
+    
+    const order = get().orders.find(o => o.id === orderId);
+    if (order) {
+      const notification: Notification = {
+        id: `notif-${Date.now()}`,
+        userId: order.userId,
+        type: 'review',
+        title: '服务已完成',
+        content: '服务已完成，欢迎您评价反馈',
+        read: false,
+        timestamp: new Date().toISOString(),
+        relatedId: orderId,
+      };
+      set((state) => ({ notifications: [notification, ...state.notifications] }));
+    }
+  },
+  
+  getComplaints: () => complaints,
 }));
-
-import { useAuthStore } from './authStore';

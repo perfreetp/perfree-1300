@@ -6,7 +6,6 @@ import {
   Droplets, Trash2, Footprints, Camera, Heart,
   Pause, Play, CheckCircle2,
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
 import { useAuthStore, usePetStore, useOrderStore } from '@/store';
 import { mockServices } from '@/data/mockData';
 import type { FeedingPlan, ServiceType } from '@/data/types';
@@ -27,10 +26,9 @@ const timeSlots = ['07:00', '09:00', '12:00', '14:00', '18:00', '20:00'];
 const inputClass = 'w-full px-4 py-3 border border-warm-200 rounded-xl focus:ring-2 focus:ring-primary-500 outline-none';
 
 export default function FeedingPlanPage() {
-  const navigate = useNavigate();
   const { currentUser } = useAuthStore();
   const { pets } = usePetStore();
-  const { feedingPlans } = useOrderStore();
+  const { feedingPlans, addFeedingPlan } = useOrderStore();
 
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showForm, setShowForm] = useState(false);
@@ -72,14 +70,31 @@ export default function FeedingPlanPage() {
   };
 
   const handleSubmit = () => {
-    const { name, startDate, endDate, petId } = formData;
-    if (!name || !startDate || !endDate || !petId) {
+    const { name, startDate, endDate, petId, serviceItems, frequency, weekDays, timeSlots, notes } = formData;
+    if (!name || !startDate || !endDate || !petId || serviceItems.length === 0) {
       alert('请填写完整信息');
       return;
     }
+    addFeedingPlan({
+      name,
+      petId,
+      startDate,
+      endDate,
+      serviceItems: serviceItems as string[],
+      frequency,
+      weekDays: frequency === 'weekly' ? weekDays : undefined,
+      timeSlots,
+      status: 'active',
+      notes,
+    });
     setShowForm(false);
-    alert('计划创建成功！');
-    navigate('/order/payment');
+    setFormData({
+      name: '', startDate: '', endDate: '', petId: '', notes: '',
+      serviceItems: [],
+      frequency: 'daily',
+      weekDays: [],
+      timeSlots: [],
+    });
   };
 
   const days = getDaysInMonth(currentDate);

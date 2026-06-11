@@ -129,6 +129,15 @@ export interface FeedingPlan {
   notes: string;
 }
 
+export interface RefundRequest {
+  orderId: string;
+  reason: string;
+  amount: number;
+  description: string;
+  status: 'pending' | 'processing' | 'approved' | 'rejected';
+  createdAt: string;
+}
+
 export interface ServiceItem {
   id: ServiceType;
   name: string;

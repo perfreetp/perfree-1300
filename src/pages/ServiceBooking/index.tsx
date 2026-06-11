@@ -67,7 +67,10 @@ export default function ServiceBookingPage() {
     if (order) {
       setCurrentOrder(order);
       setShowSuccess(true);
-      setTimeout(() => { setShowSuccess(false); navigate('/order/payment'); }, 1500);
+      setTimeout(() => {
+        setShowSuccess(false);
+        navigate(`/order/${order.id}`);
+      }, 1500);
     }
   };
 

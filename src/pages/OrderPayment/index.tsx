@@ -11,8 +11,8 @@ import type { PaymentMethod, Coupon } from '@/data/types';
 import { format } from 'date-fns';
 
 export default function OrderPayment() {
-  const { orderId } = useParams<{ orderId: string }>();
-  const { orders, payOrder, selectCoupon } = useOrderStore();
+  const { id } = useParams<{ id: string }>();
+  const { orders, payOrder, selectCoupon, currentOrder, setCurrentOrder } = useOrderStore();
   const { currentUser } = useAuthStore();
   
   const [selectedCoupon, setSelectedCoupon] = useState<Coupon | null>(null);
@@ -20,7 +20,7 @@ export default function OrderPayment() {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [showCouponPicker, setShowCouponPicker] = useState(false);
 
-  const order = orders.find(o => o.id === orderId) || orders[0];
+  const order = (id ? orders.find(o => o.id === id) : null) || currentOrder || orders[0];
   const feeder = order ? getFeederById(order.feederId) : null;
   const pet = order ? getPetById(order.petId) : null;
 
@@ -44,6 +44,7 @@ export default function OrderPayment() {
     if (!order || !currentUser) return;
     payOrder(order.id, paymentMethod);
     setShowSuccessModal(true);
+    setCurrentOrder(null);
   };
 
   const paymentMethods = [

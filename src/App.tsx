@@ -9,6 +9,8 @@ import OrderPayment from '@/pages/OrderPayment';
 import FeedingRecord from '@/pages/FeedingRecord';
 import Notification from '@/pages/Notification';
 import ReviewAftersales from '@/pages/ReviewAftersales';
+import FeederDashboard from '@/pages/FeederDashboard';
+import AdminDashboard from '@/pages/AdminDashboard';
 
 export default function App() {
   return (
@@ -24,6 +26,8 @@ export default function App() {
             <Route path="/records" element={<FeedingRecord />} />
             <Route path="/notifications" element={<Notification />} />
             <Route path="/reviews" element={<ReviewAftersales />} />
+            <Route path="/feeder-dashboard" element={<FeederDashboard />} />
+            <Route path="/admin-dashboard" element={<AdminDashboard />} />
           </Route>
         </Routes>
       </AnimatePresence>

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   PawPrint, 
@@ -14,7 +14,9 @@ import {
   Menu, 
   X,
   User,
-  ChevronDown
+  ChevronDown,
+  Briefcase,
+  Settings as SettingsIcon,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { useOrderStore } from '@/store/orderStore';
@@ -31,10 +33,29 @@ const navItems = [
 
 export default function Header() {
   const location = useLocation();
+  const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const { currentUser, switchRole } = useAuthStore();
   const unreadCount = useOrderStore((state) => state.getUnreadNotificationCount());
+
+  const handleSwitchRole = (role: 'owner' | 'feeder' | 'admin') => {
+    switchRole(role);
+    setUserMenuOpen(false);
+    if (role === 'feeder') {
+      navigate('/feeder-dashboard');
+    } else if (role === 'admin') {
+      navigate('/admin-dashboard');
+    } else {
+      navigate('/');
+    }
+  };
+
+  const getDashboardPath = () => {
+    if (currentUser?.role === 'feeder') return '/feeder-dashboard';
+    if (currentUser?.role === 'admin') return '/admin-dashboard';
+    return '/';
+  };
 
   return (
     <header className="sticky top-0 z-50 glass-effect border-b border-primary-100">
@@ -125,6 +146,23 @@ export default function Header() {
                       </div>
                     </div>
                     <div className="p-2">
+                      <Link
+                        to={getDashboardPath()}
+                        onClick={() => setUserMenuOpen(false)}
+                        className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-warm-600 hover:bg-warm-50 transition-colors"
+                      >
+                        {currentUser?.role === 'feeder' ? (
+                          <Briefcase className="w-4 h-4" />
+                        ) : currentUser?.role === 'admin' ? (
+                          <SettingsIcon className="w-4 h-4" />
+                        ) : (
+                          <Home className="w-4 h-4" />
+                        )}
+                        {currentUser?.role === 'feeder' ? '喂养员工作台' : 
+                         currentUser?.role === 'admin' ? '管理员后台' : '返回首页'}
+                      </Link>
+                    </div>
+                    <div className="p-2 border-t border-warm-100">
                       <p className="text-xs text-warm-400 px-3 py-2">角色切换</p>
                       {(['owner', 'feeder', 'admin'] as const).map((role) => {
                         const roleLabels = { owner: '宠物主人', feeder: '喂养员', admin: '管理员' };
@@ -132,10 +170,7 @@ export default function Header() {
                         return (
                           <button
                             key={role}
-                            onClick={() => {
-                              switchRole(role);
-                              setUserMenuOpen(false);
-                            }}
+                            onClick={() => handleSwitchRole(role)}
                             className={`w-full px-3 py-2 rounded-xl text-left text-sm transition-colors ${
                               isActive
                                 ? 'bg-primary-100 text-primary-700'
@@ -144,6 +179,7 @@ export default function Header() {
                           >
                             <User className="w-4 h-4 inline mr-2" />
                             {roleLabels[role]}
+                            {isActive && <span className="float-right text-primary-500">当前</span>}
                           </button>
                         );
                       })}
