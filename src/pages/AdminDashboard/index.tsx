@@ -9,7 +9,7 @@ import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { useOrderStore } from '@/store';
 import { getPetById, getServiceName, mockFeeders } from '@/data/mockData';
-import type { RefundRequest, ServiceType, Review } from '@/data/types';
+import type { RefundRequest, ServiceType, Review, Complaint } from '@/data/types';
 
 type TabId = 'refunds' | 'complaints' | 'prices' | 'finance';
 
@@ -28,10 +28,13 @@ export default function AdminDashboard() {
     processRefund, 
     updateServicePrice, 
     getServicePrices,
+    getComplaints,
+    updateComplaintStatus,
   } = useOrderStore();
   
   const [activeTab, setActiveTab] = useState<TabId>('refunds');
   const [selectedRefund, setSelectedRefund] = useState<RefundRequest | null>(null);
+  const [selectedComplaint, setSelectedComplaint] = useState<Complaint | null>(null);
   const [priceForm, setPriceForm] = useState(() => {
     const prices = getServicePrices();
     const map: Record<string, number> = {};
@@ -39,10 +42,27 @@ export default function AdminDashboard() {
     return map;
   });
   const [showPriceSuccess, setShowPriceSuccess] = useState(false);
+  const [handlerNote, setHandlerNote] = useState('');
+  const [showHandlerInput, setShowHandlerInput] = useState(false);
   
+  const complaints = getComplaints();
   const pendingRefunds = refundRequests.filter(r => r.status === 'pending');
   const completedRefunds = refundRequests.filter(r => r.status !== 'pending');
-  const complaints = reviews.filter(r => r.overallRating <= 2);
+  const lowRatingReviews = reviews.filter(r => r.overallRating <= 2);
+  
+  const allComplaints = [
+    ...complaints.map(c => ({ ...c, source: 'complaint' as const })),
+    ...lowRatingReviews.map(r => ({
+      id: `review-${r.id}`,
+      orderId: r.orderId,
+      userId: r.userId,
+      content: r.content,
+      status: (r.complaintStatus || 'pending') as Complaint['status'],
+      type: 'service' as const,
+      createdAt: r.createdAt,
+      source: 'review' as const,
+    })),
+  ];
   
   const totalRevenue = orders.filter(o => o.paymentStatus === 'paid')
     .reduce((sum, o) => sum + o.totalPrice, 0);
@@ -249,26 +269,43 @@ export default function AdminDashboard() {
 
   const renderComplaintsTab = () => (
     <div className="space-y-4">
-      {complaints.length === 0 ? (
+      {allComplaints.length === 0 ? (
         <div className="card text-center py-16">
-          <Star className="w-16 h-16 text-warm-300 mx-auto mb-4" />
+          <AlertTriangle className="w-16 h-16 text-warm-300 mx-auto mb-4" />
           <p className="text-warm-500">暂无投诉记录</p>
         </div>
       ) : (
-        complaints.map((review: Review, idx: number) => {
-          const order = orders.find(o => o.id === review.orderId);
+        allComplaints.map((item, idx: number) => {
+          const order = orders.find(o => o.id === item.orderId);
           const pet = order ? getPetById(order.petId) : null;
           const feeder = order?.feederId 
             ? mockFeeders.find(f => f.id === order.feederId) || null
             : null;
+          const review = item.source === 'review' 
+            ? reviews.find(r => r.id === item.id.replace('review-', ''))
+            : null;
+          
+          const statusConfig: Record<Complaint['status'], { label: string; class: string }> = {
+            pending: { label: '待处理', class: 'badge-warning' },
+            processing: { label: '处理中', class: 'badge-primary' },
+            resolved: { label: '已解决', class: 'badge-success' },
+            closed: { label: '已关闭', class: 'badge-secondary' },
+          };
+          
+          const typeConfig: Record<Complaint['type'], { label: string; class: string }> = {
+            service: { label: '服务投诉', class: 'bg-red-100 text-red-600' },
+            refund: { label: '退款投诉', class: 'bg-amber-100 text-amber-600' },
+            other: { label: '其他投诉', class: 'bg-warm-100 text-warm-600' },
+          };
           
           return (
             <motion.div
-              key={review.id}
+              key={item.id}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: idx * 0.05 }}
-              className="card"
+              className="card cursor-pointer card-hover"
+              onClick={() => setSelectedComplaint(item as Complaint)}
             >
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-3">
@@ -281,54 +318,210 @@ export default function AdminDashboard() {
                   )}
                   <div>
                     <p className="font-medium text-warm-800">{feeder?.name || '未知喂养员'}</p>
-                    <p className="text-xs text-warm-400">服务：{pet?.name || '未知'}</p>
+                    <p className="text-xs text-warm-400">服务宠物：{pet?.name || '未知'}</p>
                   </div>
                 </div>
-                <span className="badge badge-error">投诉</span>
+                <div className="flex flex-col items-end gap-1">
+                  <span className={`badge ${statusConfig[item.status].class}`}>
+                    {statusConfig[item.status].label}
+                  </span>
+                  <span className={`px-2 py-0.5 rounded-full text-xs ${typeConfig[item.type].class}`}>
+                    {typeConfig[item.type].label}
+                  </span>
+                </div>
               </div>
               
-              <div className="flex items-center gap-1 mb-2">
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <Star
-                    key={star}
-                    className={`w-4 h-4 ${
-                      star <= review.overallRating
-                        ? 'text-amber-400 fill-amber-400'
-                        : 'text-warm-200'
-                    }`}
-                  />
-                ))}
-              </div>
-              
-              <p className="text-sm text-warm-600 mb-2">{review.content}</p>
-              
-              {review.afterSalesStatus !== 'none' && (
-                <div className="p-3 bg-red-50 rounded-xl">
-                  <p className="text-sm text-red-700 font-medium">
-                    售后状态：{review.afterSalesStatus === 'pending' ? '待处理' : review.afterSalesStatus === 'processing' ? '处理中' : review.afterSalesStatus === 'resolved' ? '已解决' : '已拒绝'}
-                  </p>
-                  {review.refundReason && (
-                    <p className="text-sm text-red-600 mt-1">退款原因：{review.refundReason}</p>
-                  )}
+              {review && (
+                <div className="flex items-center gap-1 mb-2">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <Star
+                      key={star}
+                      className={`w-4 h-4 ${
+                        star <= review.overallRating
+                          ? 'text-amber-400 fill-amber-400'
+                          : 'text-warm-200'
+                      }`}
+                    />
+                  ))}
                 </div>
               )}
               
-              <div className="flex items-center justify-between mt-4 pt-3 border-t border-warm-100">
-                <p className="text-xs text-warm-400">{fmt(review.createdAt, 'yyyy-MM-dd HH:mm')}</p>
-                <div className="flex gap-2">
-                  <button className="text-sm text-secondary-600 hover:text-secondary-700">
-                    查看详情
-                  </button>
-                  <button className="text-sm text-primary-600 hover:text-primary-700">
-                    处理
-                  </button>
+              <p className="text-sm text-warm-600 mb-2 line-clamp-2">{item.content}</p>
+              
+              {item.type === 'refund' && (
+                <div className="p-2 bg-amber-50 rounded-lg mb-2">
+                  <p className="text-xs text-amber-600">退款相关投诉，请同步查看退款处理</p>
                 </div>
+              )}
+              
+              <div className="flex items-center justify-between mt-3 pt-3 border-t border-warm-100">
+                <p className="text-xs text-warm-400">{fmt(item.createdAt, 'yyyy-MM-dd HH:mm')}</p>
+                <span className="text-sm text-primary-600 flex items-center gap-1">
+                  查看详情 <ChevronRight className="w-4 h-4" />
+                </span>
               </div>
             </motion.div>
           );
         })
       )}
     </div>
+  );
+
+  const handleUpdateComplaintStatus = (status: Complaint['status']) => {
+    if (!selectedComplaint) return;
+    updateComplaintStatus(selectedComplaint.id, status, handlerNote || undefined);
+    setSelectedComplaint(null);
+    setHandlerNote('');
+    setShowHandlerInput(false);
+  };
+
+  const renderComplaintDetail = () => (
+    <AnimatePresence>
+      {selectedComplaint && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onClick={() => setSelectedComplaint(null)}
+        >
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.9, opacity: 0 }}
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto"
+          >
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl font-display text-warm-800">投诉详情</h3>
+              <button onClick={() => setSelectedComplaint(null)} className="text-warm-400 hover:text-warm-600">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            
+            {(() => {
+              const order = orders.find(o => o.id === selectedComplaint.orderId);
+              const pet = order ? getPetById(order.petId) : null;
+              const feeder = order?.feederId 
+                ? mockFeeders.find(f => f.id === order.feederId) || null
+                : null;
+              
+              const statusConfig: Record<Complaint['status'], { label: string; class: string }> = {
+                pending: { label: '待处理', class: 'badge-warning' },
+                processing: { label: '处理中', class: 'badge-primary' },
+                resolved: { label: '已解决', class: 'badge-success' },
+                closed: { label: '已关闭', class: 'badge-secondary' },
+              };
+              
+              return (
+                <div className="space-y-5">
+                  <div className="flex items-center justify-between">
+                    <span className={`badge ${statusConfig[selectedComplaint.status].class}`}>
+                      {statusConfig[selectedComplaint.status].label}
+                    </span>
+                    <span className="text-sm text-warm-400">
+                      {fmt(selectedComplaint.createdAt, 'yyyy-MM-dd HH:mm')}
+                    </span>
+                  </div>
+                  
+                  <div className="p-4 bg-warm-50 rounded-xl space-y-3">
+                    <div className="flex items-center gap-3">
+                      <div className="text-warm-400">订单</div>
+                      <div className="font-medium text-warm-800">
+                        订单 #{selectedComplaint.orderId.slice(-6)}
+                      </div>
+                    </div>
+                    {pet && (
+                      <div className="flex items-center gap-3">
+                        <div className="text-warm-400">宠物</div>
+                        <div className="font-medium text-warm-800">{pet.name} ({pet.breed})</div>
+                      </div>
+                    )}
+                    {feeder && (
+                      <div className="flex items-center gap-3">
+                        <div className="text-warm-400">喂养员</div>
+                        <div className="flex items-center gap-2">
+                          <img src={feeder.avatar} alt={feeder.name} className="w-6 h-6 rounded-full" />
+                          <span className="font-medium text-warm-800">{feeder.name}</span>
+                        </div>
+                      </div>
+                    )}
+                    {order && (
+                      <div className="flex items-center gap-3">
+                        <div className="text-warm-400">服务</div>
+                        <div className="font-medium text-warm-800">
+                          {getServiceName(order.serviceType)} · {order.scheduledDate}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="p-4 bg-red-50 rounded-xl">
+                    <p className="text-sm font-medium text-red-700 mb-2">投诉内容</p>
+                    <p className="text-sm text-red-600">{selectedComplaint.content}</p>
+                  </div>
+                  
+                  {selectedComplaint.handlerNote && (
+                    <div className="p-4 bg-green-50 rounded-xl">
+                      <p className="text-sm font-medium text-green-700 mb-2">处理备注</p>
+                      <p className="text-sm text-green-600">{selectedComplaint.handlerNote}</p>
+                    </div>
+                  )}
+                  
+                  {selectedComplaint.status !== 'resolved' && selectedComplaint.status !== 'closed' && (
+                    <div className="space-y-3">
+                      {showHandlerInput && (
+                        <div>
+                          <label className="block text-sm font-medium text-warm-700 mb-2">
+                            处理备注
+                          </label>
+                          <textarea
+                            value={handlerNote}
+                            onChange={(e) => setHandlerNote(e.target.value)}
+                            placeholder="填写处理说明..."
+                            rows={3}
+                            className="input-field resize-none"
+                          />
+                        </div>
+                      )}
+                      
+                      <div className="grid grid-cols-2 gap-3">
+                        {selectedComplaint.status === 'pending' && (
+                          <button
+                            onClick={() => {
+                              if (!showHandlerInput) {
+                                setShowHandlerInput(true);
+                              } else {
+                                handleUpdateComplaintStatus('processing');
+                              }
+                            }}
+                            className="py-3 rounded-xl bg-primary-100 text-primary-700 font-medium hover:bg-primary-200 transition-colors"
+                          >
+                            开始处理
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleUpdateComplaintStatus('resolved')}
+                          className="py-3 rounded-xl bg-green-500 text-white font-medium hover:bg-green-600 transition-colors"
+                        >
+                          标记已解决
+                        </button>
+                        <button
+                          onClick={() => handleUpdateComplaintStatus('closed')}
+                          className="py-3 rounded-xl bg-warm-100 text-warm-600 font-medium hover:bg-warm-200 transition-colors"
+                        >
+                          关闭投诉
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 
   const renderPricesTab = () => {
@@ -664,6 +857,7 @@ export default function AdminDashboard() {
       </div>
 
       {renderRefundDetail()}
+      {renderComplaintDetail()}
     </div>
   );
 }

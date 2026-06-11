@@ -31,22 +31,19 @@ export default function FeedingRecord() {
   );
 
   const filteredRecords = useMemo(() => {
-    let records = [...mockFeedingRecords, ...feedingRecords].sort(
+    const allRecords = [...mockFeedingRecords, ...feedingRecords];
+    const uniqueRecords = Array.from(new Map(allRecords.map(r => [r.id, r])).values());
+    return uniqueRecords.sort(
       (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-    );
-    if (selectedOrder !== 'all') {
-      records = records.filter(r => r.orderId === selectedOrder);
-    }
-    if (selectedDate) {
-      records = records.filter(r => 
-        format(new Date(r.timestamp), 'yyyy-MM-dd') === selectedDate
-      );
-    }
-    return records;
+    ).filter(r => {
+      if (selectedOrder !== 'all' && r.orderId !== selectedOrder) return false;
+      if (selectedDate && format(new Date(r.timestamp), 'yyyy-MM-dd') !== selectedDate) return false;
+      return true;
+    });
   }, [selectedOrder, selectedDate, feedingRecords]);
 
   const allPhotos = useMemo(() => 
-    filteredRecords.flatMap(r => r.photos),
+    [...new Set(filteredRecords.flatMap(r => r.photos))],
     [filteredRecords]
   );
 

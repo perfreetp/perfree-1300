@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Order, FeedingRecord, Review, Notification, FeedingPlan, Coupon, ServiceType, PaymentMethod, ServiceItem } from '@/data/types';
+import type { Order, FeedingRecord, Review, Notification, FeedingPlan, Coupon, ServiceType, PaymentMethod, ServiceItem, RefundRequest, Complaint } from '@/data/types';
 import { mockOrders, mockFeedingRecords, mockReviews, mockNotifications, mockFeedingPlans, mockCoupons, mockServices } from '@/data/mockData';
 import { useAuthStore } from './authStore';
 
@@ -11,15 +11,6 @@ interface BookingState {
   selectedPetId: string | null;
   notes: string;
   selectedCouponId: string | null;
-}
-
-interface RefundRequest {
-  orderId: string;
-  reason: string;
-  amount: number;
-  description: string;
-  status: 'pending' | 'processing' | 'approved' | 'rejected';
-  createdAt: string;
 }
 
 interface AdminConfig {
@@ -73,7 +64,9 @@ interface OrderState {
   feederConfirmArrival: (orderId: string) => void;
   feederCompleteService: (orderId: string, recordData: Omit<FeedingRecord, 'id' | 'orderId' | 'feederId'>) => void;
   
-  getComplaints: () => { id: string; orderId: string; userId: string; content: string; status: string; createdAt: string }[];
+  getComplaints: () => Complaint[];
+  updateComplaintStatus: (complaintId: string, status: Complaint['status'], handlerNote?: string) => void;
+  getComplaintById: (complaintId: string) => Complaint | undefined;
 }
 
 const initialBooking: BookingState = {
@@ -105,9 +98,10 @@ const initialAdminConfig: AdminConfig = {
   platformFeeRate: 0.15,
 };
 
-const complaints = [
-  { id: 'comp-1', orderId: 'order-5', userId: 'user-3', content: '喂养员迟到，服务态度不好', status: 'pending', createdAt: '2026-06-10T15:00:00' },
-  { id: 'comp-2', orderId: 'order-3', userId: 'user-2', content: '宠物回家后状态不对', status: 'processing', createdAt: '2026-06-12T09:00:00' },
+const complaints: Complaint[] = [
+  { id: 'comp-1', orderId: 'order-5', userId: 'user-3', content: '喂养员迟到，服务态度不好', status: 'pending', type: 'service', createdAt: '2026-06-10T15:00:00' },
+  { id: 'comp-2', orderId: 'order-3', userId: 'user-2', content: '宠物回家后状态不对', status: 'processing', type: 'service', createdAt: '2026-06-12T09:00:00' },
+  { id: 'comp-3', orderId: 'order-5', userId: 'user-3', content: '退款申请已提交一周，还未处理', status: 'pending', type: 'refund', createdAt: '2026-06-11T10:00:00' },
 ];
 
 export const useOrderStore = create<OrderState>((set, get) => ({
@@ -530,4 +524,17 @@ export const useOrderStore = create<OrderState>((set, get) => ({
   },
   
   getComplaints: () => complaints,
+  updateComplaintStatus: (complaintId, status, handlerNote) => {
+    const idx = complaints.findIndex(c => c.id === complaintId);
+    if (idx >= 0) {
+      complaints[idx] = {
+        ...complaints[idx],
+        status,
+        handledAt: new Date().toISOString(),
+        handlerNote,
+      };
+    }
+    set({});
+  },
+  getComplaintById: (complaintId) => complaints.find(c => c.id === complaintId),
 }));

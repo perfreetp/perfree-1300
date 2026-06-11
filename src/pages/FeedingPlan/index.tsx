@@ -300,12 +300,99 @@ export default function FeedingPlanPage() {
                 <h3 className="text-xl font-bold text-warm-900">{selectedPlan.name}</h3>
                 <button onClick={() => setSelectedPlan(null)} className="p-2 hover:bg-warm-100 rounded-lg"><X className="w-5 h-5 text-warm-500" /></button>
               </div>
-              <div className="space-y-2 text-warm-700">
-                <p><span className="text-warm-400">宠物：</span>{petName(selectedPlan.petId)}</p>
-                <p><span className="text-warm-400">日期：</span>{selectedPlan.startDate} ~ {selectedPlan.endDate}</p>
-                <p><span className="text-warm-400">周期：</span>{selectedPlan.frequency === 'daily' ? '每日' : '每周'}</p>
-                <p><span className="text-warm-400">时间：</span>{selectedPlan.timeSlots.join(', ')}</p>
-                <p><span className="text-warm-400">备注：</span>{selectedPlan.notes}</p>
+              <div className="space-y-4">
+                <div className="flex items-center gap-3 p-3 bg-warm-50 rounded-xl">
+                  {(() => {
+                    const pet = pets.find(p => p.id === selectedPlan.petId);
+                    return (
+                      <>
+                        {pet?.photo ? (
+                          <img src={pet.photo} alt={pet.name} className="w-12 h-12 rounded-xl object-cover" />
+                        ) : (
+                          <div className="w-12 h-12 rounded-xl bg-primary-100 flex items-center justify-center">
+                            <UtensilsCrossed className="w-6 h-6 text-primary-500" />
+                          </div>
+                        )}
+                        <div>
+                          <p className="font-medium text-warm-800">{pet?.name || '未知宠物'}</p>
+                          <p className="text-xs text-warm-500">{pet?.breed}</p>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+
+                <div className="space-y-3 text-warm-700">
+                  <div className="flex items-start gap-3">
+                    <Calendar className="w-5 h-5 text-primary-500 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm text-warm-400">服务周期</p>
+                      <p className="font-medium">{selectedPlan.startDate} ~ {selectedPlan.endDate}</p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-start gap-3">
+                    <Repeat className="w-5 h-5 text-secondary-500 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm text-warm-400">重复频率</p>
+                      <p className="font-medium">
+                        {selectedPlan.frequency === 'daily' ? '每日' : '每周'}
+                      </p>
+                      {selectedPlan.frequency === 'weekly' && selectedPlan.weekDays && selectedPlan.weekDays.length > 0 && (
+                        <div className="flex gap-1 mt-2">
+                          {weekDays.map((d, i) => (
+                            <span
+                              key={d}
+                              className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium ${
+                                selectedPlan.weekDays?.includes(i)
+                                  ? 'bg-secondary-500 text-white'
+                                  : 'bg-warm-100 text-warm-300'
+                              }`}
+                            >
+                              {d}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-start gap-3">
+                    <Clock className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm text-warm-400">服务时段</p>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {selectedPlan.timeSlots.map(t => (
+                          <span key={t} className="px-2 py-1 bg-amber-100 text-amber-700 rounded-lg text-xs font-medium">
+                            {t}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-primary-50 rounded-xl">
+                  <p className="text-sm font-medium text-primary-700 mb-2">服务项目</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {selectedPlan.serviceItems.map((item) => {
+                      const Icon = serviceIcons[item] || UtensilsCrossed;
+                      return (
+                        <div key={item} className="flex items-center gap-2 p-2 bg-white rounded-lg">
+                          <Icon className="w-4 h-4 text-primary-500" />
+                          <span className="text-sm text-warm-700">{svcName(item)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {selectedPlan.notes && (
+                  <div className="p-4 bg-warm-50 rounded-xl">
+                    <p className="text-sm font-medium text-warm-700 mb-1">备注说明</p>
+                    <p className="text-sm text-warm-600">{selectedPlan.notes}</p>
+                  </div>
+                )}
               </div>
             </div>
           </Modal>

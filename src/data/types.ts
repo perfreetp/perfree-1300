@@ -98,7 +98,22 @@ export interface Review {
   afterSalesStatus: AfterSalesStatus;
   refundReason?: string;
   refundAmount?: number;
+  isComplaint?: boolean;
+  complaintReason?: string;
+  complaintStatus?: 'pending' | 'processing' | 'resolved' | 'closed';
   createdAt: string;
+}
+
+export interface Complaint {
+  id: string;
+  orderId: string;
+  userId: string;
+  content: string;
+  status: 'pending' | 'processing' | 'resolved' | 'closed';
+  type: 'service' | 'refund' | 'other';
+  createdAt: string;
+  handledAt?: string;
+  handlerNote?: string;
 }
 
 export type NotificationType = 'system' | 'order' | 'feeding' | 'review';

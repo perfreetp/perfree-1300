@@ -40,6 +40,8 @@ export default function FeederDashboard() {
     medicationGiven: false,
     notes: '',
   });
+  const [uploadedPhotos, setUploadedPhotos] = useState<string[]>([]);
+  const [uploadedVideos, setUploadedVideos] = useState<string[]>([]);
 
   const pendingOrders = orders.filter(o => o.status === 'pending');
   const acceptedOrders = orders.filter(o => o.status === 'accepted' && o.feederId === currentUser?.id);
@@ -70,8 +72,8 @@ export default function FeederDashboard() {
     if (!selectedOrder) return;
     feederCompleteService(selectedOrder.id, {
       timestamp: new Date().toISOString(),
-      photos: [],
-      videos: [],
+      photos: uploadedPhotos,
+      videos: uploadedVideos,
       foodAmount: parseFloat(recordForm.foodAmount) || 0,
       waterAmount: parseFloat(recordForm.waterAmount) || 0,
       bowelMovement: recordForm.bowelMovement,
@@ -89,6 +91,8 @@ export default function FeederDashboard() {
       medicationGiven: false,
       notes: '',
     });
+    setUploadedPhotos([]);
+    setUploadedVideos([]);
   };
 
   const fmt = (d: string, p: string) => format(new Date(d), p, { locale: zhCN });
@@ -475,15 +479,63 @@ export default function FeederDashboard() {
             </div>
             
             <div className="space-y-5">
-              <div className="flex items-center gap-3 p-3 bg-primary-50 rounded-xl">
-                <Camera className="w-6 h-6 text-primary-500" />
-                <div>
-                  <p className="text-sm font-medium text-primary-700">拍照回传</p>
-                  <p className="text-xs text-primary-500">上传宠物照片和视频</p>
+              <div className="p-4 bg-primary-50 rounded-xl">
+                <div className="flex items-center gap-3 mb-3">
+                  <Camera className="w-6 h-6 text-primary-500" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-primary-700">拍照回传</p>
+                    <p className="text-xs text-primary-500">上传宠物照片和视频</p>
+                  </div>
                 </div>
-                <button className="ml-auto px-4 py-2 bg-primary-500 text-white text-sm rounded-xl">
-                  <ImageIcon className="w-4 h-4 inline mr-1" />上传
-                </button>
+                <div className="flex gap-2 flex-wrap mb-3">
+                  {uploadedPhotos.map((photo, idx) => (
+                    <div key={idx} className="relative">
+                      <img src={photo} alt="" className="w-20 h-20 rounded-xl object-cover" />
+                      <button
+                        onClick={() => setUploadedPhotos(uploadedPhotos.filter((_, i) => i !== idx))}
+                        className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-xs"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                  {uploadedVideos.map((_, idx) => (
+                    <div key={`video-${idx}`} className="relative w-20 h-20 rounded-xl bg-warm-200 flex items-center justify-center">
+                      <ImageIcon className="w-8 h-8 text-warm-500" />
+                      <span className="absolute bottom-1 text-xs text-warm-600">视频{idx + 1}</span>
+                      <button
+                        onClick={() => setUploadedVideos(uploadedVideos.filter((_, i) => i !== idx))}
+                        className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-xs"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    onClick={() => {
+                      const newPhoto = `https://picsum.photos/400/300?random=${Date.now()}`;
+                      setUploadedPhotos([...uploadedPhotos, newPhoto]);
+                    }}
+                    className="w-20 h-20 rounded-xl border-2 border-dashed border-primary-300 flex flex-col items-center justify-center text-primary-500 hover:bg-primary-100 transition-colors"
+                  >
+                    <ImageIcon className="w-6 h-6" />
+                    <span className="text-xs mt-1">加照片</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setUploadedVideos([...uploadedVideos, `video-${Date.now()}`]);
+                    }}
+                    className="w-20 h-20 rounded-xl border-2 border-dashed border-secondary-300 flex flex-col items-center justify-center text-secondary-500 hover:bg-secondary-100 transition-colors"
+                  >
+                    <Camera className="w-6 h-6" />
+                    <span className="text-xs mt-1">加视频</span>
+                  </button>
+                </div>
+                {(uploadedPhotos.length > 0 || uploadedVideos.length > 0) && (
+                  <p className="text-xs text-primary-600">
+                    已上传 {uploadedPhotos.length} 张照片，{uploadedVideos.length} 个视频
+                  </p>
+                )}
               </div>
               
               <div className="grid grid-cols-2 gap-4">

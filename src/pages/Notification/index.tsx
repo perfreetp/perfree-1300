@@ -1,10 +1,10 @@
-import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, ShoppingBag, Clock, MessageSquare, Check, Trash2, ChevronDown, ChevronUp, Sparkles } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { motion, AnimatePresence, PanInfo } from 'framer-motion';
+import { Bell, ShoppingBag, Clock, MessageSquare, Check, Trash2, ChevronDown, ChevronUp, Sparkles, X } from 'lucide-react';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { useAuthStore, useOrderStore } from '@/store';
-import type { NotificationType } from '@/data/types';
+import type { NotificationType, Notification } from '@/data/types';
 
 const tabs: { type: NotificationType | 'all'; label: string; icon: typeof Bell }[] = [
   { type: 'all', label: '全部', icon: Sparkles },
@@ -27,6 +27,8 @@ export default function NotificationPage() {
   const [activeTab, setActiveTab] = useState<NotificationType | 'all'>('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [swipedId, setSwipedId] = useState<string | null>(null);
+  const [dragX, setDragX] = useState<Record<string, number>>({});
+  const dragStartX = useRef<Record<string, number>>({});
 
   const userNotifications = currentUser
     ? notifications.filter(
@@ -40,11 +42,17 @@ export default function NotificationPage() {
 
   const unreadCount = userNotifications.filter((n) => !n.read).length;
 
+  const getTabUnreadCount = (type: NotificationType | 'all') => {
+    if (type === 'all') return unreadCount;
+    return userNotifications.filter(n => n.type === type && !n.read).length;
+  };
+
   const handleMarkAllRead = () => {
     markAllNotificationsRead();
   };
 
-  const handleNotificationClick = (notification: typeof userNotifications[0]) => {
+  const handleNotificationClick = (notification: Notification) => {
+    if (Math.abs(dragX[notification.id] || 0) > 10) return;
     if (!notification.read) {
       markNotificationRead(notification.id);
     }
@@ -54,9 +62,45 @@ export default function NotificationPage() {
   const handleDelete = (id: string) => {
     deleteNotification(id);
     setSwipedId(null);
-    if (expandedId === id) {
-      setExpandedId(null);
+    setExpandedId(null);
+    setDragX(prev => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  };
+
+  const handleDragStart = (id: string, event: any, info: PanInfo) => {
+    dragStartX.current[id] = dragX[id] || 0;
+    setSwipedId(id);
+  };
+
+  const handleDrag = (id: string, event: any, info: PanInfo) => {
+    const newX = (dragStartX.current[id] || 0) + info.offset.x;
+    const clampedX = Math.max(-100, Math.min(0, newX));
+    setDragX(prev => ({ ...prev, [id]: clampedX }));
+  };
+
+  const handleDragEnd = (id: string, event: any, info: PanInfo) => {
+    const finalX = (dragStartX.current[id] || 0) + info.offset.x;
+    if (finalX < -50) {
+      setDragX(prev => ({ ...prev, [id]: -80 }));
+      setSwipedId(id);
+    } else {
+      setDragX(prev => ({ ...prev, [id]: 0 }));
+      setSwipedId(null);
     }
+  };
+
+  const handleCardClick = (id: string) => {
+    if (swipedId === id && Math.abs(dragX[id] || 0) > 50) {
+      setDragX(prev => ({ ...prev, [id]: 0 }));
+      setSwipedId(null);
+      return;
+    }
+    if (Math.abs(dragX[id] || 0) > 10) return;
+    const notification = userNotifications.find(n => n.id === id);
+    if (notification) handleNotificationClick(notification);
   };
 
   const getTypeColor = (type: NotificationType) => {
@@ -96,14 +140,12 @@ export default function NotificationPage() {
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.type;
-              const tabUnreadCount = tab.type === 'all'
-                ? unreadCount
-                : userNotifications.filter(n => n.type === tab.type && !n.read).length;
+              const tabUnreadCount = getTabUnreadCount(tab.type);
               
               return (
                 <motion.button
                   key={tab.type}
-                  onClick={() => setActiveTab(tab.type)}
+                  onClick={() => { setActiveTab(tab.type); setSwipedId(null); setDragX({}); }}
                   className={`flex items-center gap-2 px-4 py-2 rounded-full whitespace-nowrap transition-all duration-300 ${
                     isActive
                       ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white shadow-soft'
@@ -128,7 +170,7 @@ export default function NotificationPage() {
           {unreadCount > 0 && (
             <button
               onClick={handleMarkAllRead}
-              className="flex items-center gap-2 px-4 py-2 text-sm text-secondary-600 hover:text-secondary-700 transition-colors"
+              className="flex items-center gap-2 px-4 py-2 text-sm text-secondary-600 hover:text-secondary-700 transition-colors flex-shrink-0"
             >
               <Check className="w-4 h-4" />
               全部已读
@@ -157,6 +199,9 @@ export default function NotificationPage() {
             ) : (
               filteredNotifications.map((notification, index) => {
                 const Icon = getTypeIcon(notification.type);
+                const isSwiped = swipedId === notification.id;
+                const offsetX = dragX[notification.id] || 0;
+                
                 return (
                   <motion.div
                     key={notification.id}
@@ -165,22 +210,27 @@ export default function NotificationPage() {
                     transition={{ delay: index * 0.05 }}
                     className="relative overflow-hidden rounded-2xl"
                   >
-                    <div
-                      className="absolute right-0 top-0 bottom-0 w-20 bg-red-500 flex items-center justify-center z-10"
-                      style={{ transform: swipedId === notification.id ? 'translateX(0)' : 'translateX(100%)' }}
-                    >
+                    <div className="absolute right-0 top-0 bottom-0 w-20 bg-red-500 flex items-center justify-center z-10">
                       <button
                         onClick={() => handleDelete(notification.id)}
-                        className="text-white p-2"
+                        className="text-white p-3 flex flex-col items-center gap-1"
                       >
                         <Trash2 className="w-5 h-5" />
+                        <span className="text-xs">删除</span>
                       </button>
                     </div>
 
                     <motion.div
-                      className="card cursor-pointer"
-                      style={{ transform: swipedId === notification.id ? 'translateX(-80px)' : 'translateX(0)' }}
-                      onClick={() => handleNotificationClick(notification)}
+                      drag="x"
+                      dragConstraints={{ left: -100, right: 0 }}
+                      dragElastic={0.1}
+                      onDragStart={(e, info) => handleDragStart(notification.id, e, info)}
+                      onDrag={(e, info) => handleDrag(notification.id, e, info)}
+                      onDragEnd={(e, info) => handleDragEnd(notification.id, e, info)}
+                      animate={{ x: offsetX }}
+                      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                      className="card cursor-pointer relative"
+                      onClick={() => handleCardClick(notification.id)}
                     >
                       <div className="flex items-start gap-3">
                         <div className={`p-2 rounded-xl flex-shrink-0 ${getTypeColor(notification.type)}`}>
@@ -261,6 +311,12 @@ export default function NotificationPage() {
                           )}
                         </div>
                       </div>
+                      
+                      {isSwiped && offsetX < -50 && (
+                        <div className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-warm-400 animate-pulse">
+                          ← 左滑删除
+                        </div>
+                      )}
                     </motion.div>
                   </motion.div>
                 );
