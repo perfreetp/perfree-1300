@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import type { Order, FeedingRecord, Review, Notification, FeedingPlan, Coupon, ServiceType, PaymentMethod, ServiceItem, RefundRequest, Complaint } from '@/data/types';
-import { mockOrders, mockFeedingRecords, mockReviews, mockNotifications, mockFeedingPlans, mockCoupons, mockServices } from '@/data/mockData';
+import type { Order, FeedingRecord, Review, Notification, FeedingPlan, Coupon, ServiceType, PaymentMethod, ServiceItem, RefundRequest, Complaint, FulfillmentTimelineItem, FulfillmentAction } from '@/data/types';
+import { mockOrders, mockFeedingRecords, mockReviews, mockNotifications, mockFeedingPlans, mockCoupons, mockServices, getFeederById } from '@/data/mockData';
 import { useAuthStore } from './authStore';
 
 interface BookingState {
@@ -26,6 +26,7 @@ interface OrderState {
   feedingPlans: FeedingPlan[];
   coupons: Coupon[];
   refundRequests: RefundRequest[];
+  fulfillmentTimeline: FulfillmentTimelineItem[];
   currentOrder: Order | null;
   booking: BookingState;
   adminConfig: AdminConfig;
@@ -67,6 +68,12 @@ interface OrderState {
   getComplaints: () => Complaint[];
   updateComplaintStatus: (complaintId: string, status: Complaint['status'], handlerNote?: string) => void;
   getComplaintById: (complaintId: string) => Complaint | undefined;
+  
+  addTimelineItem: (orderId: string, action: FulfillmentAction, opts?: Partial<FulfillmentTimelineItem>) => void;
+  getTimelineByOrder: (orderId: string) => FulfillmentTimelineItem[];
+  submitReview: (orderId: string, reviewData: Omit<Review, 'id' | 'userId' | 'orderId' | 'createdAt'>) => void;
+  hasReviewForOrder: (orderId: string) => boolean;
+  getReviewByOrder: (orderId: string) => Review | undefined;
 }
 
 const initialBooking: BookingState = {
@@ -112,6 +119,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
   feedingPlans: mockFeedingPlans,
   coupons: mockCoupons,
   refundRequests: initialRefundRequests,
+  fulfillmentTimeline: buildInitialTimeline(),
   currentOrder: null,
   booking: initialBooking,
   adminConfig: initialAdminConfig,
@@ -181,6 +189,8 @@ export const useOrderStore = create<OrderState>((set, get) => ({
           : order
       ),
     }));
+    
+    get().addTimelineItem(id, 'payment_received', { description: `通过${method === 'wechat' ? '微信' : method === 'alipay' ? '支付宝' : '银行卡'}支付` });
     
     const order = get().orders.find(o => o.id === id);
     if (order) {
@@ -446,6 +456,8 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       ),
     }));
     
+    get().addTimelineItem(orderId, 'order_accepted', { description: '喂养员确认接单' });
+    
     const order = get().orders.find(o => o.id === orderId);
     if (order) {
       const notification: Notification = {
@@ -470,6 +482,8 @@ export const useOrderStore = create<OrderState>((set, get) => ({
           : order
       ),
     }));
+    
+    get().addTimelineItem(orderId, 'feeder_arrived', { description: '喂养员已到达服务地点' });
     
     const order = get().orders.find(o => o.id === orderId);
     if (order) {
@@ -507,6 +521,8 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     };
     set((state) => ({ feedingRecords: [newRecord, ...state.feedingRecords] }));
     
+    get().addTimelineItem(orderId, 'service_completed', { description: '喂养员完成服务并上传记录' });
+    
     const order = get().orders.find(o => o.id === orderId);
     if (order) {
       const notification: Notification = {
@@ -537,4 +553,193 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     set({});
   },
   getComplaintById: (complaintId) => complaints.find(c => c.id === complaintId),
+
+  addTimelineItem: (orderId, action, opts = {}) => {
+    const { currentUser } = useAuthStore.getState();
+    const item: FulfillmentTimelineItem = {
+      id: `ftl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      orderId,
+      action,
+      actor: currentUser?.role === 'feeder' ? 'feeder' : currentUser?.role === 'admin' ? 'admin' : 'owner',
+      actorId: currentUser?.id,
+      actorName: currentUser?.name,
+      timestamp: new Date().toISOString(),
+      ...opts,
+    };
+    set((state) => ({ fulfillmentTimeline: [item, ...state.fulfillmentTimeline] }));
+  },
+
+  getTimelineByOrder: (orderId) => {
+    const { fulfillmentTimeline, feedingRecords, reviews } = get();
+    const order = get().orders.find(o => o.id === orderId);
+
+    const extraItems: FulfillmentTimelineItem[] = [];
+
+    if (order) {
+      extraItems.push({
+        id: `auto-order-${orderId}`,
+        orderId,
+        action: 'order_created',
+        actor: 'system',
+        timestamp: order.createdAt,
+        description: '订单创建成功',
+      });
+      if (order.paymentStatus === 'paid') {
+        extraItems.push({
+          id: `auto-pay-${orderId}`,
+          orderId,
+          action: 'payment_received',
+          actor: 'system',
+          timestamp: order.createdAt,
+          description: '支付完成',
+        });
+      }
+    }
+
+    feedingRecords
+      .filter(r => r.orderId === orderId)
+      .forEach(r => {
+        extraItems.push({
+          id: `auto-rec-${r.id}`,
+          orderId,
+          action: 'record_uploaded',
+          actor: 'feeder',
+          actorId: r.feederId,
+          actorName: getFeederById(r.feederId)?.name,
+          timestamp: r.timestamp,
+          description: r.abnormalReport ? `上传服务记录 · 异常：${r.abnormalReport}` : '上传服务记录',
+          relatedRecordId: r.id,
+        });
+      });
+
+    reviews
+      .filter(r => r.orderId === orderId)
+      .forEach(r => {
+        extraItems.push({
+          id: `auto-review-${r.id}`,
+          orderId,
+          action: 'review_submitted',
+          actor: 'owner',
+          actorId: r.userId,
+          timestamp: r.createdAt,
+          description: `提交评价 · ${r.overallRating}星`,
+        });
+      });
+
+    return [...fulfillmentTimeline.filter(t => t.orderId === orderId), ...extraItems]
+      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+  },
+
+  submitReview: (orderId, reviewData) => {
+    const { currentUser } = useAuthStore.getState();
+    if (!currentUser) return;
+
+    const review: Review = {
+      ...reviewData,
+      id: `review-${Date.now()}`,
+      orderId,
+      userId: currentUser.id,
+      createdAt: new Date().toISOString(),
+    };
+    set((state) => ({ reviews: [review, ...state.reviews] }));
+
+    set((state) => ({
+      orders: state.orders.map(o =>
+        o.id === orderId ? { ...o, status: 'reviewed' as const } : o
+      ),
+    }));
+
+    get().addTimelineItem(orderId, 'review_submitted', {
+      description: `完成评价（综合 ${reviewData.overallRating} 星）`,
+    });
+  },
+
+  hasReviewForOrder: (orderId) => get().reviews.some(r => r.orderId === orderId),
+  getReviewByOrder: (orderId) => get().reviews.find(r => r.orderId === orderId),
 }));
+
+function buildInitialTimeline(): FulfillmentTimelineItem[] {
+  const items: FulfillmentTimelineItem[] = [];
+  const now = Date.now();
+
+  mockOrders.forEach((order, idx) => {
+    const created = new Date(order.createdAt).getTime();
+    const offset = idx * 3600 * 1000;
+    const feeder = getFeederById(order.feederId);
+
+    items.push({
+      id: `init-created-${order.id}`,
+      orderId: order.id,
+      action: 'order_created',
+      actor: 'owner',
+      actorId: order.userId,
+      timestamp: new Date(created).toISOString(),
+      description: '订单创建成功',
+    });
+
+    if (order.paymentStatus === 'paid') {
+      items.push({
+        id: `init-paid-${order.id}`,
+        orderId: order.id,
+        action: 'payment_received',
+        actor: 'system',
+        timestamp: new Date(created + 60 * 1000).toISOString(),
+        description: '支付完成，等待喂养员接单',
+      });
+    }
+
+    if (order.status !== 'pending') {
+      items.push({
+        id: `init-accepted-${order.id}`,
+        orderId: order.id,
+        action: 'order_accepted',
+        actor: 'feeder',
+        actorId: order.feederId,
+        actorName: feeder?.name,
+        timestamp: new Date(created + 5 * 60 * 1000).toISOString(),
+        description: `${feeder?.name || '喂养员'}已接单，准备上门`,
+      });
+    }
+
+    if (order.status === 'in_progress' || order.status === 'completed' || order.status === 'reviewed') {
+      items.push({
+        id: `init-arrived-${order.id}`,
+        orderId: order.id,
+        action: 'feeder_arrived',
+        actor: 'feeder',
+        actorId: order.feederId,
+        actorName: feeder?.name,
+        timestamp: new Date(created + 60 * 60 * 1000).toISOString(),
+        description: '喂养员已到达服务地点',
+      });
+    }
+
+    if (order.status === 'completed' || order.status === 'reviewed') {
+      items.push({
+        id: `init-completed-${order.id}`,
+        orderId: order.id,
+        action: 'service_completed',
+        actor: 'feeder',
+        actorId: order.feederId,
+        actorName: feeder?.name,
+        timestamp: new Date(created + 2 * 60 * 60 * 1000).toISOString(),
+        description: '服务完成，等待评价',
+      });
+    }
+
+    if (order.status === 'reviewed') {
+      items.push({
+        id: `init-reviewed-${order.id}`,
+        orderId: order.id,
+        action: 'review_submitted',
+        actor: 'owner',
+        actorId: order.userId,
+        timestamp: new Date(created + 3 * 60 * 60 * 1000).toISOString(),
+        description: '宠物主已完成评价',
+      });
+    }
+  });
+
+  void now;
+  return items;
+}

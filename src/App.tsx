@@ -9,6 +9,7 @@ import OrderPayment from '@/pages/OrderPayment';
 import FeedingRecord from '@/pages/FeedingRecord';
 import Notification from '@/pages/Notification';
 import ReviewAftersales from '@/pages/ReviewAftersales';
+import ReviewSubmit from '@/pages/ReviewSubmit';
 import FeederDashboard from '@/pages/FeederDashboard';
 import AdminDashboard from '@/pages/AdminDashboard';
 
@@ -24,8 +25,10 @@ export default function App() {
             <Route path="/booking" element={<ServiceBooking />} />
             <Route path="/order/:id" element={<OrderPayment />} />
             <Route path="/records" element={<FeedingRecord />} />
+            <Route path="/records/:orderId" element={<FeedingRecord />} />
             <Route path="/notifications" element={<Notification />} />
             <Route path="/reviews" element={<ReviewAftersales />} />
+            <Route path="/review/:orderId" element={<ReviewSubmit />} />
             <Route path="/feeder-dashboard" element={<FeederDashboard />} />
             <Route path="/admin-dashboard" element={<AdminDashboard />} />
           </Route>

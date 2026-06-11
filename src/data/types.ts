@@ -40,9 +40,32 @@ export interface Feeder {
 }
 
 export type ServiceType = 'feeding' | 'water' | 'cleaning' | 'walking' | 'photo' | 'comprehensive';
-export type OrderStatus = 'pending' | 'accepted' | 'in_progress' | 'completed' | 'cancelled' | 'refunded';
+export type OrderStatus = 'pending' | 'accepted' | 'in_progress' | 'completed' | 'reviewed' | 'cancelled' | 'refunded';
 export type PaymentStatus = 'unpaid' | 'paid' | 'refunded';
 export type PaymentMethod = 'wechat' | 'alipay' | 'card';
+export type FulfillmentAction =
+  | 'order_created'
+  | 'payment_received'
+  | 'order_accepted'
+  | 'feeder_arrived'
+  | 'record_uploaded'
+  | 'service_completed'
+  | 'review_submitted'
+  | 'order_cancelled'
+  | 'refund_requested'
+  | 'refund_approved';
+
+export interface FulfillmentTimelineItem {
+  id: string;
+  orderId: string;
+  action: FulfillmentAction;
+  actor: 'owner' | 'feeder' | 'system' | 'admin';
+  actorId?: string;
+  actorName?: string;
+  timestamp: string;
+  description?: string;
+  relatedRecordId?: string;
+}
 
 export interface Order {
   id: string;

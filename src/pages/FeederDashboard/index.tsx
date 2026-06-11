@@ -27,7 +27,9 @@ export default function FeederDashboard() {
     feedingRecords, 
     feederAcceptOrder, 
     feederConfirmArrival, 
-    feederCompleteService 
+    feederCompleteService,
+    hasReviewForOrder,
+    getTimelineByOrder,
   } = useOrderStore();
   
   const [activeTab, setActiveTab] = useState<TabId>('orders');
@@ -462,8 +464,51 @@ export default function FeederDashboard() {
                       <ClipboardCheck className="w-4 h-4 text-primary-500" />
                       履约状态
                     </p>
-                    <FeederOrderStatusFlow status={selectedOrder.status} />
+                    <FeederOrderStatusFlow
+                      status={selectedOrder.status}
+                      reviewed={hasReviewForOrder(selectedOrder.id)}
+                    />
                   </div>
+
+                  {getTimelineByOrder(selectedOrder.id).length > 0 && (
+                    <div className="p-4 bg-warm-50 rounded-xl">
+                      <p className="text-sm font-medium text-warm-700 mb-3 flex items-center gap-2">
+                        <Clock className="w-4 h-4 text-secondary-500" />
+                        履约时间轴
+                        <span className="ml-auto text-xs text-warm-400 font-normal">
+                          {getTimelineByOrder(selectedOrder.id).length} 条
+                        </span>
+                      </p>
+                      <div className="space-y-2.5">
+                        {getTimelineByOrder(selectedOrder.id).map(item => {
+                          let label: string = item.action;
+                          let dotColor = 'bg-gray-400';
+                          if (item.action === 'order_created' || item.action === 'payment_received') { label = item.action === 'payment_received' ? '支付完成' : '订单创建'; dotColor = item.action === 'payment_received' ? 'bg-green-500' : 'bg-gray-400'; }
+                          else if (item.action === 'order_accepted') { label = '喂养员接单'; dotColor = 'bg-secondary-500'; }
+                          else if (item.action === 'feeder_arrived') { label = '到达服务地点'; dotColor = 'bg-blue-500'; }
+                          else if (item.action === 'record_uploaded') { label = '上传服务记录'; dotColor = 'bg-primary-500'; }
+                          else if (item.action === 'service_completed') { label = '完成服务'; dotColor = 'bg-amber-500'; }
+                          else if (item.action === 'review_submitted') { label = '已评价'; dotColor = 'bg-yellow-500'; }
+                          return (
+                            <div key={item.id} className="flex items-start gap-2.5">
+                              <div className={`w-2.5 h-2.5 rounded-full ${dotColor} mt-1.5 flex-shrink-0`} />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className="text-xs font-medium text-warm-800">{label}</p>
+                                  <span className="text-[10px] text-warm-400 flex-shrink-0">
+                                    {format(new Date(item.timestamp), 'MM-dd HH:mm')}
+                                  </span>
+                                </div>
+                                {item.description && (
+                                  <p className="text-[10px] text-warm-500 mt-0.5">{item.description}</p>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                   
                   <div className="flex items-center justify-between pt-4 border-t border-warm-100">
                     <div>
@@ -786,11 +831,13 @@ const FEEDER_STATUS_STEPS: { key: OrderStatus; label: string; icon: typeof Clipb
   { key: 'accepted', label: '已接单', icon: ClipboardCheck, desc: '已确认，准备上门' },
   { key: 'in_progress', label: '已到达', icon: Navigation, desc: '已到达服务地点' },
   { key: 'completed', label: '服务完成', icon: CheckCircle, desc: '服务已完成' },
+  { key: 'reviewed', label: '已评价', icon: Star, desc: '宠物主已评价' },
 ];
 
-function FeederOrderStatusFlow({ status }: { status: OrderStatus }) {
-  const stepOrder: OrderStatus[] = ['pending', 'accepted', 'in_progress', 'completed'];
-  const currentIndex = stepOrder.indexOf(status);
+function FeederOrderStatusFlow({ status, reviewed = false }: { status: OrderStatus; reviewed?: boolean }) {
+  const stepOrder: OrderStatus[] = ['pending', 'accepted', 'in_progress', 'completed', 'reviewed'];
+  const actualStatus = reviewed && status === 'completed' ? 'reviewed' : status;
+  const currentIndex = stepOrder.indexOf(actualStatus);
 
   if (status === 'cancelled' || status === 'refunded') {
     return (
