@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  ClipboardList, Clock, Camera, Droplets, UtensilsCrossed,
-  Pill, Smile, CheckCircle, MapPin, Calendar, Star,
+  ClipboardList, ClipboardCheck, Clock, Camera, Droplets, UtensilsCrossed,
+  Pill, Smile, CheckCircle, MapPin, Calendar, Star, Navigation,
   Package, DollarSign, TrendingUp, X, Send, Image as ImageIcon,
 } from 'lucide-react';
 import { format } from 'date-fns';
@@ -10,7 +10,7 @@ import { zhCN } from 'date-fns/locale';
 import { useAuthStore, useOrderStore } from '@/store';
 import { getPetById, getServiceName } from '@/data/mockData';
 import StarRating from '@/components/ui/StarRating';
-import type { Order, BowelStatus } from '@/data/types';
+import type { Order, BowelStatus, OrderStatus } from '@/data/types';
 
 type TabId = 'orders' | 'records' | 'earnings';
 
@@ -33,6 +33,7 @@ export default function FeederDashboard() {
   const [activeTab, setActiveTab] = useState<TabId>('orders');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [showRecordForm, setShowRecordForm] = useState(false);
+  const [selectedMedia, setSelectedMedia] = useState<{ type: 'photo' | 'video'; url: string } | null>(null);
   const [recordForm, setRecordForm] = useState({
     foodAmount: '',
     waterAmount: '',
@@ -272,6 +273,38 @@ export default function FeederDashboard() {
               {record.notes && (
                 <p className="text-sm text-warm-500 mt-2">{record.notes}</p>
               )}
+
+              {(record.photos.length > 0 || record.videos.length > 0) && (
+                <div className="mt-3 pt-3 border-t border-warm-100">
+                  <p className="text-xs text-warm-400 mb-2">服务素材</p>
+                  <div className="flex gap-2 flex-wrap">
+                    {record.photos.map((photo, pIdx) => (
+                      <div
+                        key={`p-${pIdx}`}
+                        className="w-20 h-20 rounded-xl overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
+                        onClick={() => setSelectedMedia({ type: 'photo', url: photo })}
+                      >
+                        <img src={photo} alt="" className="w-full h-full object-cover" />
+                      </div>
+                    ))}
+                    {record.videos.map((video, vIdx) => (
+                      <div
+                        key={`v-${vIdx}`}
+                        className="w-20 h-20 rounded-xl bg-warm-800 flex flex-col items-center justify-center cursor-pointer hover:bg-warm-700 transition-colors relative overflow-hidden"
+                        onClick={() => setSelectedMedia({ type: 'video', url: video })}
+                      >
+                        <Camera className="w-8 h-8 text-white/80" />
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <div className="w-8 h-8 rounded-full bg-white/30 flex items-center justify-center">
+                            <div className="w-0 h-0 border-l-[8px] border-l-white border-t-[5px] border-t-transparent border-b-[5px] border-b-transparent ml-0.5" />
+                          </div>
+                        </div>
+                        <span className="text-xs text-white/80 mt-1">视频{vIdx + 1}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </motion.div>
           );
         })
@@ -424,6 +457,14 @@ export default function FeederDashboard() {
                     </div>
                   )}
                   
+                  <div className="p-4 bg-warm-50 rounded-xl">
+                    <p className="text-sm font-medium text-warm-700 mb-3 flex items-center gap-2">
+                      <ClipboardCheck className="w-4 h-4 text-primary-500" />
+                      履约状态
+                    </p>
+                    <FeederOrderStatusFlow status={selectedOrder.status} />
+                  </div>
+                  
                   <div className="flex items-center justify-between pt-4 border-t border-warm-100">
                     <div>
                       <p className="text-sm text-warm-500">服务费用</p>
@@ -523,7 +564,8 @@ export default function FeederDashboard() {
                   </button>
                   <button
                     onClick={() => {
-                      setUploadedVideos([...uploadedVideos, `video-${Date.now()}`]);
+                      const petName = selectedOrder ? getPetById(selectedOrder.petId)?.name || 'pet' : 'pet';
+                      setUploadedVideos([...uploadedVideos, `video://${petName}-service-${Date.now()}.mp4`]);
                     }}
                     className="w-20 h-20 rounded-xl border-2 border-dashed border-secondary-300 flex flex-col items-center justify-center text-secondary-500 hover:bg-secondary-100 transition-colors"
                   >
@@ -688,6 +730,111 @@ export default function FeederDashboard() {
 
       {renderOrderDetail()}
       {renderRecordForm()}
+
+      <AnimatePresence>
+        {selectedMedia && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4"
+            onClick={() => setSelectedMedia(null)}
+          >
+            <button
+              onClick={() => setSelectedMedia(null)}
+              className="absolute top-6 right-6 w-10 h-10 bg-white/20 rounded-full flex items-center justify-center"
+            >
+              <X className="w-6 h-6 text-white" />
+            </button>
+            {selectedMedia.type === 'photo' ? (
+              <motion.img
+                initial={{ scale: 0.8 }}
+                animate={{ scale: 1 }}
+                exit={{ scale: 0.8 }}
+                src={selectedMedia.url}
+                alt=""
+                className="max-w-full max-h-full rounded-2xl object-contain"
+              />
+            ) : (
+              <motion.div
+                initial={{ scale: 0.8 }}
+                animate={{ scale: 1 }}
+                exit={{ scale: 0.8 }}
+                className="bg-warm-900 rounded-2xl p-8 text-center"
+              >
+                <Camera className="w-16 h-16 text-white/60 mx-auto mb-4" />
+                <p className="text-white/80 text-lg font-medium mb-2">视频素材</p>
+                <p className="text-white/50 text-sm mb-4">{selectedMedia.url}</p>
+                <div className="flex items-center justify-center gap-4 text-white/40 text-sm">
+                  <span>提交时间：{fmt(new Date().toISOString(), 'yyyy-MM-dd HH:mm')}</span>
+                </div>
+                <div className="mt-6 p-4 bg-white/10 rounded-xl">
+                  <p className="text-white/60 text-xs">视频文件信息</p>
+                  <p className="text-white/80 text-sm mt-1">格式：MP4 · 来源：喂养员上传</p>
+                </div>
+              </motion.div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+const FEEDER_STATUS_STEPS: { key: OrderStatus; label: string; icon: typeof ClipboardCheck; desc: string }[] = [
+  { key: 'pending', label: '待接单', icon: Package, desc: '等待确认接单' },
+  { key: 'accepted', label: '已接单', icon: ClipboardCheck, desc: '已确认，准备上门' },
+  { key: 'in_progress', label: '已到达', icon: Navigation, desc: '已到达服务地点' },
+  { key: 'completed', label: '服务完成', icon: CheckCircle, desc: '服务已完成' },
+];
+
+function FeederOrderStatusFlow({ status }: { status: OrderStatus }) {
+  const stepOrder: OrderStatus[] = ['pending', 'accepted', 'in_progress', 'completed'];
+  const currentIndex = stepOrder.indexOf(status);
+
+  if (status === 'cancelled' || status === 'refunded') {
+    return (
+      <div className="p-3 bg-red-50 rounded-xl text-center">
+        <X className="w-6 h-6 text-red-400 mx-auto mb-1" />
+        <p className="text-sm text-red-600">{status === 'cancelled' ? '订单已取消' : '已退款'}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1">
+      {FEEDER_STATUS_STEPS.map((step, idx) => {
+        const isCompleted = idx < currentIndex;
+        const isCurrent = idx === currentIndex;
+        const isPending = idx > currentIndex;
+        const StepIcon = step.icon;
+
+        return (
+          <div key={step.key} className="flex items-center flex-1">
+            <div className="flex flex-col items-center flex-1">
+              <div className={`w-7 h-7 rounded-full flex items-center justify-center ${
+                isCompleted
+                  ? 'bg-secondary-500 text-white'
+                  : isCurrent
+                  ? 'bg-primary-500 text-white'
+                  : 'bg-warm-100 text-warm-300'
+              }`}>
+                {isCompleted ? <CheckCircle className="w-4 h-4" /> : <StepIcon className="w-3.5 h-3.5" />}
+              </div>
+              <p className={`text-[10px] mt-1 text-center ${
+                isCompleted ? 'text-secondary-600' : isCurrent ? 'text-primary-600 font-medium' : 'text-warm-300'
+              }`}>
+                {step.label}
+              </p>
+            </div>
+            {idx < FEEDER_STATUS_STEPS.length - 1 && (
+              <div className={`h-0.5 flex-1 -mt-3 ${
+                isCompleted ? 'bg-secondary-400' : 'bg-warm-200'
+              }`} />
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

@@ -1,13 +1,14 @@
 import { useState, useMemo } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   MapPin, Calendar, Clock, User, CreditCard,
   CheckCircle, Ticket, X, ChevronRight, ShieldCheck,
+  ClipboardCheck, Navigation, Package, Star,
 } from 'lucide-react';
 import { useAuthStore, useOrderStore } from '@/store';
 import { getFeederById, getPetById, getStatusText, mockCoupons, mockServices } from '@/data/mockData';
-import type { PaymentMethod, Coupon } from '@/data/types';
+import type { PaymentMethod, Coupon, OrderStatus } from '@/data/types';
 import { format } from 'date-fns';
 
 export default function OrderPayment() {
@@ -98,6 +99,21 @@ export default function OrderPayment() {
             </div>
           </div>
         </motion.div>
+
+        {order && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.05 }}
+            className="bg-white rounded-2xl p-5 shadow-card"
+          >
+            <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
+              <ClipboardCheck className="w-5 h-5 text-primary-500" />
+              履约状态
+            </h3>
+            <OrderStatusFlow status={order.status} />
+          </motion.div>
+        )}
 
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -272,6 +288,82 @@ export default function OrderPayment() {
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+const STATUS_STEPS: { key: OrderStatus; label: string; icon: typeof ClipboardCheck; desc: string }[] = [
+  { key: 'pending', label: '待接单', icon: Package, desc: '等待喂养员确认接单' },
+  { key: 'accepted', label: '已接单', icon: ClipboardCheck, desc: '喂养员已确认，准备上门' },
+  { key: 'in_progress', label: '已到达', icon: Navigation, desc: '喂养员已到达服务地点' },
+  { key: 'completed', label: '服务完成', icon: CheckCircle, desc: '服务已完成，待评价' },
+];
+
+function OrderStatusFlow({ status }: { status: OrderStatus }) {
+  const stepOrder: OrderStatus[] = ['pending', 'accepted', 'in_progress', 'completed'];
+  const currentIndex = stepOrder.indexOf(status);
+  const isCancelled = status === 'cancelled';
+  const isRefunded = status === 'refunded';
+
+  if (isCancelled || isRefunded) {
+    return (
+      <div className="p-4 bg-red-50 rounded-xl text-center">
+        <X className="w-8 h-8 text-red-400 mx-auto mb-2" />
+        <p className="font-medium text-red-600">{isCancelled ? '订单已取消' : '已退款'}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-0">
+      {STATUS_STEPS.map((step, idx) => {
+        const isCompleted = idx < currentIndex;
+        const isCurrent = idx === currentIndex;
+        const isPending = idx > currentIndex;
+        const StepIcon = step.icon;
+
+        return (
+          <div key={step.key} className="flex items-start gap-3">
+            <div className="flex flex-col items-center">
+              <motion.div
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ delay: idx * 0.1 }}
+                className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
+                  isCompleted
+                    ? 'bg-secondary-500 text-white'
+                    : isCurrent
+                    ? 'bg-primary-500 text-white ring-4 ring-primary-100'
+                    : 'bg-gray-100 text-gray-400'
+                }`}
+              >
+                {isCompleted ? (
+                  <CheckCircle className="w-5 h-5" />
+                ) : (
+                  <StepIcon className="w-4 h-4" />
+                )}
+              </motion.div>
+              {idx < STATUS_STEPS.length - 1 && (
+                <div className={`w-0.5 h-8 ${
+                  isCompleted ? 'bg-secondary-400' : 'bg-gray-200'
+                }`} />
+              )}
+            </div>
+            <div className="pb-6">
+              <p className={`font-medium text-sm ${
+                isCompleted ? 'text-secondary-600' : isCurrent ? 'text-primary-600' : 'text-gray-400'
+              }`}>
+                {step.label}
+              </p>
+              <p className={`text-xs mt-0.5 ${
+                isPending ? 'text-gray-300' : 'text-gray-500'
+              }`}>
+                {isCurrent ? step.desc : isCompleted ? '已完成' : step.desc}
+              </p>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

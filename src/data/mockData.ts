@@ -321,7 +321,7 @@ export const mockFeedingRecords: FeedingRecord[] = [
       'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=dog%20water%20bowl%20with%20fresh%20water%2C%20clean%20and%20neat&image_size=square',
       'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=golden%20retriever%20playing%20with%20ball%20indoors%2C%20happy%20expression&image_size=square',
     ],
-    videos: [],
+    videos: ['video-doudou-eating-20260610'],
     foodAmount: 200,
     waterAmount: 500,
     bowelMovement: 'normal',
